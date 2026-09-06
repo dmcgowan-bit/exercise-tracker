@@ -30,6 +30,15 @@
   .index-label { color: var(--muted); font-size: 13px; margin-top: 6px; }
   .index-delta { font-size: 13px; font-weight: 600; margin-top: 4px; }
   .up { color: var(--accent2); } .down { color: #f87171; } .flat { color: var(--muted); }
+  .stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-top: 16px; }
+  .stat { background: var(--card2); border-radius: 12px; padding: 10px 4px; }
+  .stat .lab { color: var(--muted); font-size: 11px; }
+  .stat .base { font-size: 16px; font-weight: 700; margin-top: 3px; }
+  .stat .delt { font-size: 12px; font-weight: 600; margin-top: 2px; }
+  .htabs { display: flex; gap: 6px; margin: 10px 0 4px; }
+  .htab { flex: 1; padding: 6px; text-align: center; background: var(--card2); border-radius: 9px;
+    color: var(--muted); font-size: 12px; }
+  .htab.active { background: var(--accent); color: #fff; }
   .exercise { margin-bottom: 14px; }
   .exercise-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
   .exercise-name { font-weight: 600; font-size: 16px; }
@@ -66,7 +75,7 @@
   <div class="card" style="text-align:center">
     <div class="index-num" id="indexNum">0</div>
     <div class="index-label">Today's Index (weighted volume)</div>
-    <div class="index-delta" id="indexDelta"></div>
+    <div class="stats" id="statsRow"></div>
   </div>
 
   <div class="card" id="exercises"></div>
@@ -76,6 +85,12 @@
       <div class="tab active" data-chart="index">Index</div>
       <div class="tab" data-chart="volume">Daily reps</div>
       <div class="tab" data-chart="perex">By exercise</div>
+    </div>
+    <div class="htabs" id="horizons">
+      <div class="htab" data-days="7">1 week</div>
+      <div class="htab active" data-days="14">2 weeks</div>
+      <div class="htab" data-days="30">1 month</div>
+      <div class="htab" data-days="90">3 months</div>
     </div>
     <canvas id="chart"></canvas>
     <div class="small" id="chartLegend" style="margin-top:8px"></div>
@@ -125,6 +140,7 @@ const DEFAULT = {
 
 let state = load();
 let chartMode = "index";
+let chartDays = 14;
 
 function load() {
   try { const s = JSON.parse(localStorage.getItem(STORE)); if (s && s.exercises) return s; } catch(e){}
@@ -196,16 +212,21 @@ function render() {
   const todayIdx = Math.round(idx[tk]||0);
   document.getElementById("indexNum").textContent = todayIdx;
 
-  // delta vs 7-day avg (excl today)
-  const days = lastNDays(8).slice(0,7);
-  const vals = days.map(d=>idx[d]||0);
-  const avg = vals.reduce((a,b)=>a+b,0)/(vals.length||1);
-  const de = document.getElementById("indexDelta");
-  if (avg > 0) {
-    const pct = Math.round(((todayIdx-avg)/avg)*100);
-    de.textContent = (pct>=0?"▲ +":"▼ ")+pct+"% vs 7-day avg";
-    de.className = "index-delta " + (pct>2?"up":pct<-2?"down":"flat");
-  } else { de.textContent = "Building your baseline…"; de.className="index-delta flat"; }
+  // comparison stats: vs 3-day avg, vs 7-day avg, vs all-time record
+  const avgPrev = n => { const ds = lastNDays(n+1).slice(0,n); // n days before today
+    return ds.reduce((a,d)=>a+(idx[d]||0),0)/n; };
+  const a3 = avgPrev(3), a7 = avgPrev(7);
+  let rec = 0; for (const k in idx) if (k!==tk && idx[k]>rec) rec = idx[k];
+  const pctv = base => base>0 ? Math.round(((todayIdx-base)/base)*100) : null;
+  const deltaHtml = p => p===null ? '<span class="delt flat">no baseline</span>'
+    : `<span class="delt ${p>2?'up':p<-2?'down':'flat'}">${p>=0?'▲ +':'▼ '}${p}%</span>`;
+  let recHtml;
+  if (todayIdx>0 && todayIdx>=Math.round(rec)) recHtml = '<span class="delt up">🏆 New best!</span>';
+  else recHtml = deltaHtml(pctv(rec));
+  document.getElementById("statsRow").innerHTML = `
+    <div class="stat"><div class="lab">3-day avg</div><div class="base">${Math.round(a3).toLocaleString()}</div>${deltaHtml(pctv(a3))}</div>
+    <div class="stat"><div class="lab">7-day avg</div><div class="base">${Math.round(a7).toLocaleString()}</div>${deltaHtml(pctv(a7))}</div>
+    <div class="stat"><div class="lab">Record</div><div class="base">${Math.round(rec).toLocaleString()}</div>${recHtml}</div>`;
 
   // exercises with buttons
   const per = todayTotals();
@@ -252,11 +273,13 @@ function drawChart() {
   cv.width = W*dpr; cv.height = H*dpr;
   const ctx = cv.getContext("2d"); ctx.scale(dpr,dpr);
   ctx.clearRect(0,0,W,H);
-  const days = lastNDays(14);
-  const pad = {l:32,r:8,t:12,b:22};
+  const days = lastNDays(chartDays);
+  const hLabel = chartDays<=7?"last week":chartDays<=14?"last 2 weeks":chartDays<=30?"last month":"last 3 months";
+  const pad = {l:34,r:8,t:12,b:22};
   const gw = W-pad.l-pad.r, gh = H-pad.t-pad.b;
   const legend = document.getElementById("chartLegend");
-  legend.textContent = "Last 14 days";
+  const labelEvery = Math.max(1, Math.round(days.length/6)); // ~6 x-axis labels
+  const showDots = days.length<=31;
 
   const colors = ["#4f9dff","#34d399","#fbbf24","#f472b6","#a78bfa","#22d3ee","#fb923c"];
 
@@ -271,7 +294,7 @@ function drawChart() {
     ctx.fillText(max, pad.l-4, pad.t+8);
     ctx.fillText("0", pad.l-4, pad.t+gh);
     ctx.textAlign="center";
-    days.forEach((d,i)=>{ if(i%3===0||i===days.length-1){
+    days.forEach((d,i)=>{ if(i%labelEvery===0||i===days.length-1){
       ctx.fillText(d.slice(5), pad.l + gw*(i/(days.length-1)), pad.t+gh+14); }});
     const x = i => pad.l + gw*(i/(days.length-1));
     const y = v => pad.t + gh*(1 - v/max);
@@ -279,19 +302,19 @@ function drawChart() {
       ctx.strokeStyle=s.color; ctx.lineWidth=2; ctx.beginPath();
       s.data.forEach((v,i)=>{ i===0?ctx.moveTo(x(i),y(v)):ctx.lineTo(x(i),y(v)); });
       ctx.stroke();
-      ctx.fillStyle=s.color;
-      s.data.forEach((v,i)=>{ ctx.beginPath(); ctx.arc(x(i),y(v),2.5,0,7); ctx.fill(); });
+      if (showDots) { ctx.fillStyle=s.color;
+        s.data.forEach((v,i)=>{ ctx.beginPath(); ctx.arc(x(i),y(v),2.5,0,7); ctx.fill(); }); }
     });
   }
 
   if (chartMode==="index") {
     const idx = dailyIndex();
     drawSeries([{ color: colors[0], data: days.map(d=>Math.round(idx[d]||0)) }]);
-    legend.textContent = "Daily index — last 14 days";
+    legend.textContent = "Daily index — "+hLabel;
   } else if (chartMode==="volume") {
     const rep = dailyReps();
     drawSeries([{ color: colors[1], data: days.map(d=>rep[d]||0) }]);
-    legend.textContent = "Total reps/day — last 14 days";
+    legend.textContent = "Total reps/day — "+hLabel;
   } else {
     const series = state.exercises.map((ex,i)=>{
       const byDay={}; for(const e of state.log) if(e.ex===ex.id){const k=dayKey(e.t); byDay[k]=(byDay[k]||0)+e.reps;}
@@ -306,6 +329,10 @@ function drawChart() {
 document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
   document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
   t.classList.add("active"); chartMode=t.dataset.chart; drawChart();
+});
+document.querySelectorAll("#horizons .htab").forEach(t=>t.onclick=()=>{
+  document.querySelectorAll("#horizons .htab").forEach(x=>x.classList.remove("active"));
+  t.classList.add("active"); chartDays=parseInt(t.dataset.days,10); drawChart();
 });
 document.getElementById("addEx").onclick=()=>{
   const name=document.getElementById("newName").value.trim();
