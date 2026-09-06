@@ -368,10 +368,19 @@ document.getElementById("addEx").onclick=()=>{
   document.getElementById("newName").value=""; save(); render(); toast("Added "+name);
 };
 document.getElementById("undoBtn").onclick=undoLast;
-document.getElementById("exportBtn").onclick=()=>{
-  const blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
-  const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
-  a.download="reptracker-"+todayKey()+".json"; a.click();
+document.getElementById("exportBtn").onclick=async()=>{
+  const name="reptracker-"+todayKey()+".json";
+  const json=JSON.stringify(state,null,2);
+  const file=new File([json],name,{type:"application/json"});
+  // Prefer the native share sheet (iOS: Save to Files / Mail / AirDrop)
+  if(navigator.canShare && navigator.canShare({files:[file]})){
+    try{ await navigator.share({files:[file], title:name}); return; }
+    catch(e){ if(e.name==="AbortError") return; }
+  }
+  // Fallback: normal file download (desktop / older browsers)
+  const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([json],{type:"application/json"}));
+  a.download=name; document.body.appendChild(a); a.click(); a.remove();
+  toast("Exported "+name);
 };
 document.getElementById("importBtn").onclick=()=>document.getElementById("importFile").click();
 document.getElementById("importFile").onchange=(e)=>{
