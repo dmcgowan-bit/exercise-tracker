@@ -110,7 +110,6 @@
       <button class="link" id="importBtn">Import</button>
       <button class="link" style="color:#f87171" id="undoBtn">Undo last</button>
     </div>
-    <button class="addbtn" id="cloudBtn" style="width:100%; margin-top:10px; background:var(--accent)">⬇︎ Load my history (one-time)</button>
     <input type="file" id="importFile" accept="application/json" style="display:none" />
   </div>
 
@@ -379,16 +378,6 @@ document.getElementById("importFile").onchange=(e)=>{
   const f=e.target.files[0]; if(!f)return; const r=new FileReader();
   r.onload=()=>{ try{ const d=JSON.parse(r.result); if(d.exercises&&d.log){state=d;save();render();toast("Imported");} else toast("Invalid file"); }catch{toast("Invalid file");} };
   r.readAsText(f);
-};
-document.getElementById("cloudBtn").onclick=async()=>{
-  if(!confirm("Load your full imported history? This REPLACES whatever is currently in the app."))return;
-  try{
-    const r=await fetch("reptracker-import.json?v="+Date.now(),{cache:"no-store"});
-    if(!r.ok)throw new Error(r.status);
-    const d=await r.json();
-    if(d.exercises&&d.log){ state=d; save(); render(); toast("History loaded ✓ ("+d.log.length+" entries)"); }
-    else toast("Data file looked wrong");
-  }catch(e){ toast("Couldn't load — check connection"); }
 };
 window.addEventListener("resize", drawChart);
 render();
