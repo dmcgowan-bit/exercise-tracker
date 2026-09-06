@@ -395,7 +395,7 @@ function drawMonthChart() {
   const months = lastNMonths(N);
   const tot = monthlyTotals(monthMode);
   const data = months.map(k=>Math.round(tot[k]||0));
-  const pad = {l:40,r:8,t:12,b:26};
+  const pad = {l:40,r:8,t:12,b:50};
   const gw = W-pad.l-pad.r, gh = H-pad.t-pad.b;
   let max=0; for (const v of data) if (v>max) max=v; max = Math.ceil((max||1)*1.1);
   ctx.strokeStyle="#333"; ctx.lineWidth=1; ctx.beginPath();
@@ -405,17 +405,22 @@ function drawMonthChart() {
   const slot = gw/months.length;
   const bw = Math.max(3, slot*0.72);
   const color = monthMode==="index" ? "#a78bfa" : "#fbbf24";
-  const labelEvery = Math.max(1, Math.round(months.length/8));
-  ctx.textAlign="center";
+  const labelEvery = Math.max(1, Math.ceil(12/slot)); // vertical labels fit ~every month
+  // bars
   data.forEach((v,i)=>{
     const cx = pad.l + slot*(i+0.5);
     const h = gh*(v/max);
     ctx.fillStyle = color; ctx.fillRect(cx-bw/2, pad.t+gh-h, bw, h);
-    if (i%labelEvery===0 || i===data.length-1) {
-      const [y,m]=months[i].split("-"); ctx.fillStyle="#8b90a0";
-      ctx.fillText(MN[+m-1]+" '"+y.slice(2), cx, pad.t+gh+16);
-    }
   });
+  // vertical month labels
+  ctx.fillStyle="#8b90a0"; ctx.textBaseline="middle";
+  for (let i=0;i<months.length;i++) {
+    if (i%labelEvery!==0 && i!==months.length-1) continue;
+    const cx = pad.l + slot*(i+0.5);
+    const [y,m]=months[i].split("-");
+    ctx.save(); ctx.translate(cx, pad.t+gh+6); ctx.rotate(-Math.PI/2);
+    ctx.textAlign="right"; ctx.fillText(MN[+m-1]+" '"+y.slice(2), 0, 0); ctx.restore();
+  }
   legend.textContent = (monthMode==="index"?"Monthly index total":"Monthly total reps")+" — last "+N+" month"+(N>1?"s":"");
 }
 
