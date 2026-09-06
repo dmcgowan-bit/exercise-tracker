@@ -30,7 +30,7 @@
   .index-label { color: var(--muted); font-size: 13px; margin-top: 6px; }
   .index-delta { font-size: 13px; font-weight: 600; margin-top: 4px; }
   .up { color: var(--accent2); } .down { color: #f87171; } .flat { color: var(--muted); }
-  .stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-top: 16px; }
+  .stats { display: grid; grid-template-columns: repeat(2,1fr); gap: 8px; margin-top: 16px; }
   .stat { background: var(--card2); border-radius: 12px; padding: 10px 4px; }
   .stat .lab { color: var(--muted); font-size: 11px; }
   .stat .base { font-size: 16px; font-weight: 700; margin-top: 3px; }
@@ -216,6 +216,16 @@ function render() {
   const avgPrev = n => { const ds = lastNDays(n+1).slice(0,n); // n days before today
     return ds.reduce((a,d)=>a+(idx[d]||0),0)/n; };
   const a3 = avgPrev(3), a7 = avgPrev(7);
+  // average of the last 4 occurrences of today's weekday (excl today)
+  const WD = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  const todayW = new Date(tk+"T12:00:00Z").getUTCDay();
+  const sameVals = [];
+  for (let i=1; i<=120 && sameVals.length<4; i++) {
+    const d = new Date(); d.setDate(d.getDate()-i);
+    const k = d.toISOString().slice(0,10);
+    if (new Date(k+"T12:00:00Z").getUTCDay()===todayW) sameVals.push(idx[k]||0);
+  }
+  const aSame = sameVals.length ? sameVals.reduce((a,b)=>a+b,0)/sameVals.length : 0;
   let rec = 0; for (const k in idx) if (k!==tk && idx[k]>rec) rec = idx[k];
   const pctv = base => base>0 ? Math.round(((todayIdx-base)/base)*100) : null;
   const deltaHtml = p => p===null ? '<span class="delt flat">no baseline</span>'
@@ -226,6 +236,7 @@ function render() {
   document.getElementById("statsRow").innerHTML = `
     <div class="stat"><div class="lab">3-day avg</div><div class="base">${Math.round(a3).toLocaleString()}</div>${deltaHtml(pctv(a3))}</div>
     <div class="stat"><div class="lab">7-day avg</div><div class="base">${Math.round(a7).toLocaleString()}</div>${deltaHtml(pctv(a7))}</div>
+    <div class="stat"><div class="lab">Last 4 ${WD[todayW]}s</div><div class="base">${Math.round(aSame).toLocaleString()}</div>${deltaHtml(pctv(aSame))}</div>
     <div class="stat"><div class="lab">Record</div><div class="base">${Math.round(rec).toLocaleString()}</div>${recHtml}</div>`;
 
   // exercises with buttons
@@ -266,6 +277,9 @@ function renderExList() {
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 // ---- chart (canvas, no deps) ----
+function movingAvg(arr, w) {
+  return arr.map((_,i)=>{ let s=0,c=0; for(let j=Math.max(0,i-w+1);j<=i;j++){s+=arr[j];c++;} return s/c; });
+}
 function drawChart() {
   const cv = document.getElementById("chart");
   const dpr = window.devicePixelRatio||1;
@@ -273,54 +287,66 @@ function drawChart() {
   cv.width = W*dpr; cv.height = H*dpr;
   const ctx = cv.getContext("2d"); ctx.scale(dpr,dpr);
   ctx.clearRect(0,0,W,H);
-  const days = lastNDays(chartDays);
+  const maWin = chartDays<=14 ? 3 : 7;         // 3-day MA short views, 7-day MA long views
+  const extN = chartDays + maWin - 1;          // fetch extra days so MA is accurate at left edge
+  const daysExt = lastNDays(extN);
+  const days = daysExt.slice(extN - chartDays);
   const hLabel = chartDays<=7?"last week":chartDays<=14?"last 2 weeks":chartDays<=30?"last month":"last 3 months";
   const pad = {l:34,r:8,t:12,b:22};
   const gw = W-pad.l-pad.r, gh = H-pad.t-pad.b;
   const legend = document.getElementById("chartLegend");
-  const labelEvery = Math.max(1, Math.round(days.length/6)); // ~6 x-axis labels
-  const showDots = days.length<=31;
-
+  const labelEvery = Math.max(1, Math.round(days.length/6));
   const colors = ["#4f9dff","#34d399","#fbbf24","#f472b6","#a78bfa","#22d3ee","#fb923c"];
+  const x = i => pad.l + gw*(i/(days.length-1));
 
-  function drawSeries(seriesList) {
-    let max = 0;
-    for (const s of seriesList) for (const v of s.data) if (v>max) max=v;
-    max = max||1; max = Math.ceil(max*1.1);
-    // axes
+  function axes(max) {
     ctx.strokeStyle="#333"; ctx.lineWidth=1; ctx.beginPath();
     ctx.moveTo(pad.l,pad.t); ctx.lineTo(pad.l,pad.t+gh); ctx.lineTo(pad.l+gw,pad.t+gh); ctx.stroke();
     ctx.fillStyle="#8b90a0"; ctx.font="10px sans-serif"; ctx.textAlign="right";
-    ctx.fillText(max, pad.l-4, pad.t+8);
-    ctx.fillText("0", pad.l-4, pad.t+gh);
+    ctx.fillText(max, pad.l-4, pad.t+8); ctx.fillText("0", pad.l-4, pad.t+gh);
     ctx.textAlign="center";
-    days.forEach((d,i)=>{ if(i%labelEvery===0||i===days.length-1){
-      ctx.fillText(d.slice(5), pad.l + gw*(i/(days.length-1)), pad.t+gh+14); }});
-    const x = i => pad.l + gw*(i/(days.length-1));
+    days.forEach((d,i)=>{ if(i%labelEvery===0||i===days.length-1)
+      ctx.fillText(d.slice(5), x(i), pad.t+gh+14); });
+  }
+
+  // faint daily bars + prominent moving-average line (single metric)
+  function drawBarsMA(extData, barColor, lineColor) {
+    const vis = extData.slice(extN - chartDays);
+    const ma  = movingAvg(extData, maWin).slice(extN - chartDays);
+    let max=0; for(const v of vis) if(v>max)max=v; for(const v of ma) if(v>max)max=v;
+    max = Math.ceil((max||1)*1.1);
+    axes(max);
     const y = v => pad.t + gh*(1 - v/max);
-    seriesList.forEach((s,si)=>{
-      ctx.strokeStyle=s.color; ctx.lineWidth=2; ctx.beginPath();
-      s.data.forEach((v,i)=>{ i===0?ctx.moveTo(x(i),y(v)):ctx.lineTo(x(i),y(v)); });
-      ctx.stroke();
-      if (showDots) { ctx.fillStyle=s.color;
-        s.data.forEach((v,i)=>{ ctx.beginPath(); ctx.arc(x(i),y(v),2.5,0,7); ctx.fill(); }); }
-    });
+    const bw = Math.max(1.5, gw/days.length*0.62);
+    ctx.fillStyle = barColor;
+    vis.forEach((v,i)=>{ const h=gh*(v/max); ctx.fillRect(x(i)-bw/2, pad.t+gh-h, bw, h); });
+    ctx.strokeStyle=lineColor; ctx.lineWidth=2.6; ctx.lineJoin="round"; ctx.beginPath();
+    ma.forEach((v,i)=>{ i===0?ctx.moveTo(x(i),y(v)):ctx.lineTo(x(i),y(v)); });
+    ctx.stroke();
+  }
+
+  function drawLines(seriesList) {
+    let max=0; for(const s of seriesList) for(const v of s.data) if(v>max)max=v;
+    max=Math.ceil((max||1)*1.1); axes(max);
+    const y=v=>pad.t+gh*(1-v/max);
+    seriesList.forEach(s=>{ ctx.strokeStyle=s.color; ctx.lineWidth=2; ctx.beginPath();
+      s.data.forEach((v,i)=>{ i===0?ctx.moveTo(x(i),y(v)):ctx.lineTo(x(i),y(v)); }); ctx.stroke(); });
   }
 
   if (chartMode==="index") {
     const idx = dailyIndex();
-    drawSeries([{ color: colors[0], data: days.map(d=>Math.round(idx[d]||0)) }]);
-    legend.textContent = "Daily index — "+hLabel;
+    drawBarsMA(daysExt.map(d=>Math.round(idx[d]||0)), "rgba(79,157,255,0.28)", "#4f9dff");
+    legend.innerHTML = `<span style="color:#4f9dff">━</span> ${maWin}-day avg &nbsp;·&nbsp; <span style="color:#4f9dff;opacity:.5">▮</span> daily index &nbsp;·&nbsp; ${hLabel}`;
   } else if (chartMode==="volume") {
     const rep = dailyReps();
-    drawSeries([{ color: colors[1], data: days.map(d=>rep[d]||0) }]);
-    legend.textContent = "Total reps/day — "+hLabel;
+    drawBarsMA(daysExt.map(d=>rep[d]||0), "rgba(52,211,153,0.28)", "#34d399");
+    legend.innerHTML = `<span style="color:#34d399">━</span> ${maWin}-day avg &nbsp;·&nbsp; <span style="color:#34d399;opacity:.5">▮</span> daily reps &nbsp;·&nbsp; ${hLabel}`;
   } else {
     const series = state.exercises.map((ex,i)=>{
       const byDay={}; for(const e of state.log) if(e.ex===ex.id){const k=dayKey(e.t); byDay[k]=(byDay[k]||0)+e.reps;}
       return { color: colors[i%colors.length], name: ex.name, data: days.map(d=>byDay[d]||0) };
     });
-    drawSeries(series);
+    drawLines(series);
     legend.innerHTML = series.map(s=>`<span style="color:${s.color}">●</span> ${escapeHtml(s.name)}`).join("&nbsp;&nbsp;");
   }
 }
