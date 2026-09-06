@@ -97,6 +97,15 @@
   </div>
 
   <div class="card">
+    <div class="htabs" id="monthModes">
+      <div class="htab active" data-mm="index">Monthly index</div>
+      <div class="htab" data-mm="reps">Monthly reps</div>
+    </div>
+    <canvas id="monthChart"></canvas>
+    <div class="small" id="monthLegend" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
     <div class="small" style="margin-bottom:8px">Manage exercises</div>
     <div class="manage">
       <input type="text" id="newName" placeholder="Name (e.g. Squats)" style="flex:2" />
@@ -140,6 +149,7 @@ const DEFAULT = {
 let state = load();
 let chartMode = "index";
 let chartDays = 14;
+let monthMode = "index";
 
 function load() {
   try { const s = JSON.parse(localStorage.getItem(STORE)); if (s && s.exercises) return s; } catch(e){}
@@ -198,6 +208,22 @@ function lastNDays(n) {
   const days = [];
   for (let i=n-1;i>=0;i--){ const d=new Date(); d.setDate(d.getDate()-i); days.push(d.toISOString().slice(0,10)); }
   return days;
+}
+function monthKey(ms){ return dayKey(ms).slice(0,7); }
+function monthlyTotals(metric) {
+  const by = {};
+  for (const e of state.log) {
+    const ex = state.exercises.find(x=>x.id===e.ex); const w = ex?ex.weight:1;
+    const k = monthKey(e.t);
+    by[k] = (by[k]||0) + (metric==="index" ? e.reps*w : e.reps);
+  }
+  return by;
+}
+function lastNMonths(n) {
+  const [Y,M] = todayKey().split("-").map(Number); // M: 1-12
+  const arr = [];
+  for (let i=n-1;i>=0;i--){ let y=Y, m=M-i; while(m<=0){m+=12;y--;} arr.push(y+"-"+String(m).padStart(2,"0")); }
+  return arr;
 }
 
 // ---- rendering ----
@@ -258,6 +284,7 @@ function render() {
 
   renderExList();
   drawChart();
+  drawMonthChart();
 }
 
 function renderExList() {
@@ -350,6 +377,48 @@ function drawChart() {
   }
 }
 
+const MN = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function drawMonthChart() {
+  const cv = document.getElementById("monthChart");
+  const dpr = window.devicePixelRatio||1;
+  const W = cv.clientWidth, H = cv.clientHeight;
+  cv.width = W*dpr; cv.height = H*dpr;
+  const ctx = cv.getContext("2d"); ctx.scale(dpr,dpr); ctx.clearRect(0,0,W,H);
+  const legend = document.getElementById("monthLegend");
+  if (!state.log.length) { legend.textContent = "No data yet"; return; }
+  // window = available months, capped at 24
+  let minT = Infinity; for (const e of state.log) if (e.t<minT) minT=e.t;
+  const [fy,fm] = monthKey(minT).split("-").map(Number);
+  const [cy,cm] = todayKey().split("-").map(Number);
+  const span = (cy-fy)*12 + (cm-fm) + 1;
+  const N = Math.min(24, Math.max(1, span));
+  const months = lastNMonths(N);
+  const tot = monthlyTotals(monthMode);
+  const data = months.map(k=>Math.round(tot[k]||0));
+  const pad = {l:40,r:8,t:12,b:26};
+  const gw = W-pad.l-pad.r, gh = H-pad.t-pad.b;
+  let max=0; for (const v of data) if (v>max) max=v; max = Math.ceil((max||1)*1.1);
+  ctx.strokeStyle="#333"; ctx.lineWidth=1; ctx.beginPath();
+  ctx.moveTo(pad.l,pad.t); ctx.lineTo(pad.l,pad.t+gh); ctx.lineTo(pad.l+gw,pad.t+gh); ctx.stroke();
+  ctx.fillStyle="#8b90a0"; ctx.font="10px sans-serif"; ctx.textAlign="right";
+  ctx.fillText(max.toLocaleString(), pad.l-4, pad.t+8); ctx.fillText("0", pad.l-4, pad.t+gh);
+  const slot = gw/months.length;
+  const bw = Math.max(3, slot*0.72);
+  const color = monthMode==="index" ? "#a78bfa" : "#fbbf24";
+  const labelEvery = Math.max(1, Math.round(months.length/8));
+  ctx.textAlign="center";
+  data.forEach((v,i)=>{
+    const cx = pad.l + slot*(i+0.5);
+    const h = gh*(v/max);
+    ctx.fillStyle = color; ctx.fillRect(cx-bw/2, pad.t+gh-h, bw, h);
+    if (i%labelEvery===0 || i===data.length-1) {
+      const [y,m]=months[i].split("-"); ctx.fillStyle="#8b90a0";
+      ctx.fillText(MN[+m-1]+" '"+y.slice(2), cx, pad.t+gh+16);
+    }
+  });
+  legend.textContent = (monthMode==="index"?"Monthly index total":"Monthly total reps")+" — last "+N+" month"+(N>1?"s":"");
+}
+
 // ---- events ----
 document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
   document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
@@ -358,6 +427,10 @@ document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
 document.querySelectorAll("#horizons .htab").forEach(t=>t.onclick=()=>{
   document.querySelectorAll("#horizons .htab").forEach(x=>x.classList.remove("active"));
   t.classList.add("active"); chartDays=parseInt(t.dataset.days,10); drawChart();
+});
+document.querySelectorAll("#monthModes .htab").forEach(t=>t.onclick=()=>{
+  document.querySelectorAll("#monthModes .htab").forEach(x=>x.classList.remove("active"));
+  t.classList.add("active"); monthMode=t.dataset.mm; drawMonthChart();
 });
 document.getElementById("addEx").onclick=()=>{
   const name=document.getElementById("newName").value.trim();
@@ -388,7 +461,7 @@ document.getElementById("importFile").onchange=(e)=>{
   r.onload=()=>{ try{ const d=JSON.parse(r.result); if(d.exercises&&d.log){state=d;save();render();toast("Imported");} else toast("Invalid file"); }catch{toast("Invalid file");} };
   r.readAsText(f);
 };
-window.addEventListener("resize", drawChart);
+window.addEventListener("resize", ()=>{ drawChart(); drawMonthChart(); });
 render();
 </script>
 </body>
