@@ -106,9 +106,19 @@
 const STORE = "reptracker_v1";
 const DEFAULT = {
   exercises: [
-    { id: "pushups", name: "Press ups", weight: 1, increments: [1, 5, 10] },
-    { id: "squats",  name: "Squats",    weight: 0.8, increments: [1, 5, 10] },
-    { id: "situps",  name: "Sit ups",   weight: 0.7, increments: [1, 10, 20] },
+    { id: "dip",      name: "Dips",           weight: 1.5,  increments: [1,5,10] },
+    { id: "pullup",   name: "Pull-ups",       weight: 3.0,  increments: [1,5,10] },
+    { id: "burpee",   name: "Burpees",        weight: 3.0,  increments: [1,5,10] },
+    { id: "jumpsquat",name: "Jumping Squats", weight: 1.8,  increments: [1,5,10] },
+    { id: "pushups",  name: "Press-ups",      weight: 1.0,  increments: [1,5,10] },
+    { id: "hang60",   name: "60s Hang",       weight: 38.0, increments: [1,5] },
+    { id: "hang80",   name: "80s Hang",       weight: 66.0, increments: [1,5] },
+    { id: "hang90",   name: "90s Hang",       weight: 83.0, increments: [1,5] },
+    { id: "lunge",    name: "Lunges",         weight: 0.6,  increments: [1,5,10] },
+    { id: "squats",   name: "Squats",         weight: 0.8,  increments: [1,5,10] },
+    { id: "hang30",   name: "30s Hang",       weight: 10.0, increments: [1,5] },
+    { id: "hang45",   name: "45s Hang",       weight: 22.0, increments: [1,5] },
+    { id: "curls",    name: "Curls",          weight: 0.5,  increments: [1,5,10] },
   ],
   log: [] // { t: epoch_ms, ex: id, reps: n }
 };
