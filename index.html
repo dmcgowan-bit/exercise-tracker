@@ -258,11 +258,36 @@ function render() {
   let recHtml;
   if (todayIdx>0 && todayIdx>=Math.round(rec)) recHtml = '<span class="delt up">🏆 New best!</span>';
   else recHtml = deltaHtml(pctv(rec));
+
+  // this-week-vs-last (Mon start) and this-month-vs-last, on the index metric
+  const sumRange = (from, toIncl) => { let s=0; const d=new Date(from);
+    while (d<=toIncl){ s += idx[d.toISOString().slice(0,10)]||0; d.setUTCDate(d.getUTCDate()+1); } return s; };
+  const now = new Date(tk+"T00:00:00Z");
+  const isoOff = (now.getUTCDay()+6)%7;                 // days since Monday
+  const thisMon = new Date(now); thisMon.setUTCDate(now.getUTCDate()-isoOff);
+  const lastMon = new Date(thisMon); lastMon.setUTCDate(thisMon.getUTCDate()-7);
+  const lastSun = new Date(thisMon); lastSun.setUTCDate(thisMon.getUTCDate()-1);
+  const wkNow = sumRange(thisMon, now), wkPrev = sumRange(lastMon, lastSun);
+  const [Y,Mo] = tk.split("-").map(Number);
+  const moNow  = sumRange(new Date(Date.UTC(Y,Mo-1,1)), now);
+  const moPrev = sumRange(new Date(Date.UTC(Y,Mo-2,1)), new Date(Date.UTC(Y,Mo-1,0)));
+  // tile: current period as % of previous, delta = absolute change in index points
+  const periodTile = (label, cur, prev) => {
+    const p = prev>0 ? Math.round(cur/prev*100) : null;
+    const diff = Math.round(cur-prev);
+    const base = p===null ? "—" : p+"%";
+    const delt = p===null ? '<span class="delt flat">no prior</span>'
+      : `<span class="delt ${diff>0?'up':diff<0?'down':'flat'}">${diff>=0?'▲ +':'▼ '}${Math.abs(diff).toLocaleString()}</span>`;
+    return `<div class="stat"><div class="lab">${label}</div><div class="base">${base}</div>${delt}</div>`;
+  };
+
   document.getElementById("statsRow").innerHTML = `
     <div class="stat"><div class="lab">3-day avg</div><div class="base">${Math.round(a3).toLocaleString()}</div>${deltaHtml(pctv(a3))}</div>
     <div class="stat"><div class="lab">7-day avg</div><div class="base">${Math.round(a7).toLocaleString()}</div>${deltaHtml(pctv(a7))}</div>
     <div class="stat"><div class="lab">Last 4 ${WD[todayW]}s</div><div class="base">${Math.round(aSame).toLocaleString()}</div>${deltaHtml(pctv(aSame))}</div>
-    <div class="stat"><div class="lab">Record</div><div class="base">${Math.round(rec).toLocaleString()}</div>${recHtml}</div>`;
+    <div class="stat"><div class="lab">Record</div><div class="base">${Math.round(rec).toLocaleString()}</div>${recHtml}</div>
+    ${periodTile("Week vs last", wkNow, wkPrev)}
+    ${periodTile("Month vs last", moNow, moPrev)}`;
 
   // exercises with buttons
   const per = todayTotals();
