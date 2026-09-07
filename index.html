@@ -65,6 +65,10 @@
     border-radius: 10px; padding: 10px; font-size: 15px; font-family: inherit; }
   .addbtn { background: var(--accent2); color: #063; font-weight: 600; padding: 10px 14px; border-radius: 10px; }
   .del { background: none; color: #f87171; font-size: 20px; padding: 4px 8px; }
+  .logrow { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid #262b35; font-size: 13px; }
+  .logwhen { color: var(--muted); width: 104px; flex-shrink: 0; }
+  .logname { flex: 1; }
+  .logreps { font-weight: 700; color: var(--accent2); }
   footer { text-align: center; color: var(--muted); font-size: 11px; margin-top: 8px; }
 </style>
 </head>
@@ -122,6 +126,12 @@
     <input type="file" id="importFile" accept="application/json" style="display:none" />
   </div>
 
+  <div class="card">
+    <div class="small" style="margin-bottom:8px">Activity log <span id="logCount"></span></div>
+    <div id="logList"></div>
+    <button class="link" id="logMore" style="display:none; width:100%; text-align:center; margin-top:8px">Show more</button>
+  </div>
+
   <footer>Data is stored only on this device. Export regularly to back up.</footer>
   <div class="toast" id="toast"></div>
 
@@ -150,6 +160,7 @@ let state = load();
 let chartMode = "index";
 let chartDays = 14;
 let monthMode = "index";
+let logShown = 50;
 
 function load() {
   try { const s = JSON.parse(localStorage.getItem(STORE)); if (s && s.exercises) return s; } catch(e){}
@@ -240,6 +251,7 @@ function render() {
   // comparison stats: vs 3-day avg, vs 7-day avg, vs all-time record
   const avgPrev = n => { const ds = lastNDays(n+1).slice(0,n); // n days before today
     return ds.reduce((a,d)=>a+(idx[d]||0),0)/n; };
+  const yIdx = idx[lastNDays(2)[0]] || 0;   // yesterday
   const a3 = avgPrev(3), a7 = avgPrev(7);
   // average of the last 4 occurrences of today's weekday (excl today)
   const WD = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
@@ -282,6 +294,7 @@ function render() {
   };
 
   document.getElementById("statsRow").innerHTML = `
+    <div class="stat"><div class="lab">Yesterday</div><div class="base">${Math.round(yIdx).toLocaleString()}</div>${deltaHtml(pctv(yIdx))}</div>
     <div class="stat"><div class="lab">3-day avg</div><div class="base">${Math.round(a3).toLocaleString()}</div>${deltaHtml(pctv(a3))}</div>
     <div class="stat"><div class="lab">7-day avg</div><div class="base">${Math.round(a7).toLocaleString()}</div>${deltaHtml(pctv(a7))}</div>
     <div class="stat"><div class="lab">Last 4 ${WD[todayW]}s</div><div class="base">${Math.round(aSame).toLocaleString()}</div>${deltaHtml(pctv(aSame))}</div>
@@ -308,6 +321,7 @@ function render() {
   }
 
   renderExList();
+  renderLog();
   drawChart();
   drawMonthChart();
 }
@@ -326,6 +340,31 @@ function renderExList() {
 }
 
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function renderLog() {
+  const wrap = document.getElementById("logList");
+  const count = document.getElementById("logCount");
+  const more = document.getElementById("logMore");
+  const total = state.log.length;
+  count.textContent = "("+total.toLocaleString()+")";
+  // newest first, keep original index for reliable deletion
+  const entries = state.log.map((e,i)=>({e,i})).sort((a,b)=>b.e.t-a.e.t).slice(0, logShown);
+  wrap.innerHTML = entries.map(({e,i})=>{
+    const ex = state.exercises.find(x=>x.id===e.ex);
+    const name = ex ? ex.name : e.ex;
+    const dt = new Date(e.t);
+    const when = dt.toLocaleDateString(undefined,{day:"2-digit",month:"short",year:"2-digit"})
+      +" "+dt.toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"});
+    return `<div class="logrow"><span class="logwhen">${when}</span><span class="logname">${escapeHtml(name)}</span>`
+      +`<span class="logreps">+${e.reps}</span><button class="del" data-i="${i}">✕</button></div>`;
+  }).join("");
+  wrap.querySelectorAll("button.del").forEach(b=>b.onclick=()=>{
+    const i = +b.dataset.i;
+    if (confirm("Remove this entry?")) { state.log.splice(i,1); save(); render(); }
+  });
+  more.style.display = total>logShown ? "block" : "none";
+  more.textContent = total>logShown ? `Show more (${(total-logShown).toLocaleString()} older)` : "";
+}
 
 // ---- chart (canvas, no deps) ----
 function movingAvg(arr, w) {
@@ -471,6 +510,7 @@ document.getElementById("addEx").onclick=()=>{
   document.getElementById("newName").value=""; save(); render(); toast("Added "+name);
 };
 document.getElementById("undoBtn").onclick=undoLast;
+document.getElementById("logMore").onclick=()=>{ logShown+=100; renderLog(); };
 document.getElementById("exportBtn").onclick=async()=>{
   const name="reptracker-"+todayKey()+".json";
   const json=JSON.stringify(state,null,2);
