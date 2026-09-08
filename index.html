@@ -528,7 +528,24 @@ function weekCumSeries() {
     cPrev += idx[pd.toISOString().slice(0,10)]||0; prev.push(Math.round(cPrev));
     if (cd<=now) { cCur += idx[cd.toISOString().slice(0,10)]||0; cur.push(Math.round(cCur)); } else cur.push(null);
   }
-  return {labels, cur, prev};
+  // find the record (highest-total) completed week, excluding the current one
+  const thisMonKey = thisMon.toISOString().slice(0,10);
+  const weekTot = {};
+  for (const k in idx) {
+    const d = new Date(k+"T00:00:00Z"); d.setUTCDate(d.getUTCDate()-((d.getUTCDay()+6)%7));
+    const mk = d.toISOString().slice(0,10);
+    if (mk===thisMonKey) continue;              // skip in-progress week
+    weekTot[mk] = (weekTot[mk]||0) + idx[k];
+  }
+  let recMon=null, recMax=0;
+  for (const mk in weekTot) if (weekTot[mk]>recMax){ recMax=weekTot[mk]; recMon=mk; }
+  let rec=null, recLabel="";
+  if (recMon) {
+    rec=[]; let c=0; const rm=new Date(recMon+"T00:00:00Z");
+    for (let d=0; d<7; d++){ const dd=new Date(rm); dd.setUTCDate(rm.getUTCDate()+d); c+=idx[dd.toISOString().slice(0,10)]||0; rec.push(Math.round(c)); }
+    recLabel = "Record wk ("+rm.toLocaleDateString(undefined,{day:"numeric",month:"short"})+")";
+  }
+  return {labels, cur, prev, rec, recLabel};
 }
 function monthCumSeries() {
   const idx = dailyIndex();
@@ -557,6 +574,7 @@ function drawCumChart(cvId, legendEl, S, curName, prevName) {
   const L = S.labels, pad = {l:44,r:8,t:12,b:22};
   const gw = W-pad.l-pad.r, gh = H-pad.t-pad.b;
   let max=0; for (const v of S.cur) if (v!=null && v>max) max=v; for (const v of S.prev) if (v!=null && v>max) max=v;
+  if (S.rec) for (const v of S.rec) if (v!=null && v>max) max=v;
   max = Math.ceil((max||1)*1.1);
   ctx.strokeStyle="#333"; ctx.lineWidth=1; ctx.beginPath();
   ctx.moveTo(pad.l,pad.t); ctx.lineTo(pad.l,pad.t+gh); ctx.lineTo(pad.l+gw,pad.t+gh); ctx.stroke();
@@ -573,9 +591,12 @@ function drawCumChart(cvId, legendEl, S, curName, prevName) {
     data.forEach((v,i)=>{ if(v==null){started=false;return;} started?ctx.lineTo(x(i),y(v)):ctx.moveTo(x(i),y(v)); started=true; });
     ctx.stroke(); ctx.setLineDash([]);
   };
+  if (S.rec) line(S.rec, "#fbbf24", 1.8, [2,3]);  // record: gold dotted
   line(S.prev, "#8b90a0", 1.8, [5,4]);   // previous: faded dashed
   line(S.cur,  "#4f9dff", 2.8, null);     // current: bold
-  legendEl.innerHTML = `<span style="color:#4f9dff">━</span> ${curName} &nbsp;·&nbsp; <span style="color:#8b90a0">╌</span> ${prevName} &nbsp;(cumulative index)`;
+  let lg = `<span style="color:#4f9dff">━</span> ${curName} &nbsp;·&nbsp; <span style="color:#8b90a0">╌</span> ${prevName}`;
+  if (S.rec) lg += ` &nbsp;·&nbsp; <span style="color:#fbbf24">┈</span> ${S.recLabel}`;
+  legendEl.innerHTML = lg + ` &nbsp;(cumulative index)`;
 }
 function drawCumCharts() {
   drawCumChart("weekCumChart", document.getElementById("weekCumLegend"), weekCumSeries(), "This week", "Last week");
