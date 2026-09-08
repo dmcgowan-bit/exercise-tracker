@@ -262,6 +262,7 @@ function render() {
   const avgPrev = n => { const ds = lastNDays(n+1).slice(0,n); // n days before today
     return ds.reduce((a,d)=>a+(idx[d]||0),0)/n; };
   const yIdx = idx[lastNDays(2)[0]] || 0;   // yesterday
+  const repsToday = dailyReps()[tk] || 0;   // raw reps logged today
   const a3 = avgPrev(3), a7 = avgPrev(7);
   // average of the last 4 occurrences of today's weekday (excl today)
   const WD = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
@@ -297,6 +298,12 @@ function render() {
   const [Y,Mo] = tk.split("-").map(Number);
   const moNow  = sumRange(new Date(Date.UTC(Y,Mo-1,1)), now);
   const moPrev = sumRange(new Date(Date.UTC(Y,Mo-2,1)), new Date(Date.UTC(Y,Mo-1,0)));
+  // like-for-like: current period-to-date vs previous period through the same point
+  const prevWkSame = new Date(now); prevWkSame.setUTCDate(now.getUTCDate()-7);
+  const wkTDprev = sumRange(lastMon, prevWkSame);
+  const dom = now.getUTCDate();
+  const daysPrevMo = new Date(Date.UTC(Y,Mo-1,0)).getUTCDate();
+  const moTDprev = sumRange(new Date(Date.UTC(Y,Mo-2,1)), new Date(Date.UTC(Y,Mo-2,Math.min(dom,daysPrevMo))));
   // tile: current period as % of previous, delta = absolute change in index points
   const periodTile = (label, cur, prev) => {
     const p = prev>0 ? Math.round(cur/prev*100) : null;
@@ -308,12 +315,15 @@ function render() {
   };
 
   document.getElementById("statsRow").innerHTML = `
+    <div class="stat"><div class="lab">Reps today</div><div class="base">${repsToday.toLocaleString()}</div></div>
     ${statTile("Yesterday", yIdx)}
     ${statTile("Last 4 "+WD[todayW]+"s", aSame)}
     ${statTile("Record", rec, recDelt)}
     ${statTile("3-day avg", a3)}
     ${statTile("7-day avg", a7)}
+    ${periodTile("Week to date", wkNow, wkTDprev)}
     ${periodTile("Week vs last", wkNow, wkPrev)}
+    ${periodTile("Month to date", moNow, moTDprev)}
     ${periodTile("Month vs last", moNow, moPrev)}`;
 
   // exercises with buttons
