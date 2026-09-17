@@ -30,11 +30,12 @@
   .index-label { color: var(--muted); font-size: 13px; margin-top: 6px; }
   .index-delta { font-size: 13px; font-weight: 600; margin-top: 4px; }
   .up { color: var(--accent2); } .down { color: #f87171; } .flat { color: var(--muted); }
-  .stats { display: grid; grid-template-columns: repeat(2,1fr); gap: 8px; margin-top: 16px; }
-  .stat { background: var(--card2); border-radius: 12px; padding: 10px 4px; }
-  .stat .lab { color: var(--muted); font-size: 11px; }
-  .stat .base { font-size: 16px; font-weight: 700; margin-top: 3px; }
-  .stat .delt { font-size: 12px; font-weight: 600; margin-top: 2px; }
+  .stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; margin-top: 16px; }
+  .stat { background: var(--card2); border-radius: 11px; padding: 8px 4px; min-width: 0; }
+  .stat .lab { color: var(--muted); font-size: 10px; line-height: 1.15; }
+  .stat .base { font-size: 15px; font-weight: 700; margin-top: 3px; }
+  .stat .delt { font-size: 10px; font-weight: 600; margin-top: 2px; line-height: 1.15; }
+  .stat .rd { font-size: 9px; color: var(--muted); margin-top: 2px; line-height: 1.1; }
   .htabs { display: flex; gap: 6px; margin: 10px 0 4px; }
   .htab { flex: 1; padding: 6px; text-align: center; background: var(--card2); border-radius: 9px;
     color: var(--muted); font-size: 12px; }
@@ -98,6 +99,11 @@
     </div>
     <canvas id="chart"></canvas>
     <div class="small" id="chartLegend" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <canvas id="dayCumChart"></canvas>
+    <div class="small" id="dayCumLegend" style="margin-top:8px"></div>
   </div>
 
   <div class="card">
@@ -258,73 +264,116 @@ function render() {
   const todayIdx = Math.round(idx[tk]||0);
   document.getElementById("indexNum").textContent = todayIdx;
 
-  // comparison stats: vs 3-day avg, vs 7-day avg, vs all-time record
-  const avgPrev = n => { const ds = lastNDays(n+1).slice(0,n); // n days before today
-    return ds.reduce((a,d)=>a+(idx[d]||0),0)/n; };
-  const yIdx = idx[lastNDays(2)[0]] || 0;   // yesterday
-  const repsToday = dailyReps()[tk] || 0;   // raw reps logged today
-  const a3 = avgPrev(3), a7 = avgPrev(7);
-  // average of the last 4 occurrences of today's weekday (excl today)
+  // ---- baselines over full history (calendar days, incl rest days) ----
+  const rep = dailyReps();
   const WD = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  const WS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
   const todayW = new Date(tk+"T12:00:00Z").getUTCDay();
-  const sameVals = [];
-  for (let i=1; i<=120 && sameVals.length<4; i++) {
-    const d = new Date(); d.setDate(d.getDate()-i);
-    const k = d.toISOString().slice(0,10);
-    if (new Date(k+"T12:00:00Z").getUTCDay()===todayW) sameVals.push(idx[k]||0);
+  const repsToday = rep[tk] || 0;
+  const wOf = id => { const ex=state.exercises.find(x=>x.id===id); return ex?ex.weight:1; };
+  const todSec = t => { const d=new Date(t); return d.getHours()*3600+d.getMinutes()*60+d.getSeconds(); };
+
+  // time of today's most recent submission -> cumulative-by-that-time comparisons
+  let lastSubSec=null, lastSubLabel="";
+  const todayEntries = state.log.filter(e=>dayKey(e.t)===tk);
+  if (todayEntries.length){ const lt=Math.max(...todayEntries.map(e=>e.t));
+    lastSubSec=todSec(lt); lastSubLabel=new Date(lt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}); }
+  const dayCumAt = {};
+  if (lastSubSec!=null) for (const e of state.log){ if (dayKey(e.t)===tk) continue;
+    if (todSec(e.t)<=lastSubSec){ const k=dayKey(e.t); dayCumAt[k]=(dayCumAt[k]||0)+e.reps*wOf(e.ex); } }
+
+  // single pass over calendar days (first activity .. yesterday) for averages + records
+  let minT=Infinity; for (const e of state.log) if (e.t<minT) minT=e.t;
+  let dCnt=0, wdCnt=0, sIdx=0, sIdxWD=0, sRepsWD=0, sCum=0, sCumWD=0, recDay=0, recWD=0;
+  if (minT<Infinity){
+    const end=new Date(tk+"T00:00:00Z");
+    for (let d=new Date(dayKey(minT)+"T00:00:00Z"); d<end; d.setUTCDate(d.getUTCDate()+1)){
+      const k=d.toISOString().slice(0,10), w=d.getUTCDay(), vi=idx[k]||0;
+      dCnt++; sIdx+=vi; if (vi>recDay) recDay=vi;
+      if (lastSubSec!=null) sCum+=dayCumAt[k]||0;
+      if (w===todayW){ wdCnt++; sIdxWD+=vi; sRepsWD+=rep[k]||0; if (lastSubSec!=null) sCumWD+=dayCumAt[k]||0; if (vi>recWD) recWD=vi; }
+    }
   }
-  const aSame = sameVals.length ? sameVals.reduce((a,b)=>a+b,0)/sameVals.length : 0;
-  let rec = 0; for (const k in idx) if (k!==tk && idx[k]>rec) rec = idx[k];
-  // today vs a baseline: % + arrow + absolute delta (index points)
-  const deltaFull = base => {
+  const avgDaily  = dCnt? sIdx/dCnt : 0;
+  const avgWD     = wdCnt? sIdxWD/wdCnt : 0;
+  const avgRepsWD = wdCnt? sRepsWD/wdCnt : 0;
+  const avgCum    = (lastSubSec!=null && dCnt)? sCum/dCnt : null;
+  const avgCumWD  = (lastSubSec!=null && wdCnt)? sCumWD/wdCnt : null;
+
+  // ---- delta renderers ----
+  const deltaCur = (cur, base) => {
     if (!(base>0)) return '<span class="delt flat">no baseline</span>';
-    const p = Math.round(((todayIdx-base)/base)*100);
-    const abs = Math.round(todayIdx-base);
+    const p=Math.round((cur-base)/base*100), abs=Math.round(cur-base);
     return `<span class="delt ${p>2?'up':p<-2?'down':'flat'}">${p>=0?'▲ +':'▼ '}${p}% (${abs>=0?'+':''}${abs.toLocaleString()})</span>`;
   };
-  const recDelt = (todayIdx>0 && rec>0 && todayIdx>=Math.round(rec)) ? '🏆 '+deltaFull(rec) : deltaFull(rec);
-  const statTile = (label, base, over) =>
-    `<div class="stat"><div class="lab">${label}</div><div class="base">${Math.round(base).toLocaleString()}</div>${over||deltaFull(base)}</div>`;
+  const deltaFull = base => deltaCur(todayIdx, base);
+  const recDelt = (todayIdx>0 && recDay>0 && todayIdx>=Math.round(recDay)) ? '🏆 '+deltaFull(recDay) : deltaFull(recDay);
+  const tile = (label, base, over, det) =>
+    `<div class="stat"><div class="lab">${label}</div><div class="base">${Math.round(base).toLocaleString()}</div>${over||deltaFull(base)}${det?`<div class="rd">${det}</div>`:""}</div>`;
+  const cumTile = (label, avg, det) => avg==null
+    ? `<div class="stat"><div class="lab">${label}</div><div class="base">—</div><span class="delt flat">no entry yet</span></div>`
+    : `<div class="stat"><div class="lab">${label}</div><div class="base">${Math.round(avg).toLocaleString()}</div>${deltaCur(todayIdx,avg)}<div class="rd">${det}</div></div>`;
 
-  // this-week-vs-last (Mon start) and this-month-vs-last, on the index metric
+  // ---- week / month sums ----
   const sumRange = (from, toIncl) => { let s=0; const d=new Date(from);
     while (d<=toIncl){ s += idx[d.toISOString().slice(0,10)]||0; d.setUTCDate(d.getUTCDate()+1); } return s; };
   const now = new Date(tk+"T00:00:00Z");
-  const isoOff = (now.getUTCDay()+6)%7;                 // days since Monday
+  const isoOff = (now.getUTCDay()+6)%7;
   const thisMon = new Date(now); thisMon.setUTCDate(now.getUTCDate()-isoOff);
+  const thisMonKey = thisMon.toISOString().slice(0,10);
   const lastMon = new Date(thisMon); lastMon.setUTCDate(thisMon.getUTCDate()-7);
   const lastSun = new Date(thisMon); lastSun.setUTCDate(thisMon.getUTCDate()-1);
   const wkNow = sumRange(thisMon, now), wkPrev = sumRange(lastMon, lastSun);
-  const [Y,Mo] = tk.split("-").map(Number);
-  const moNow  = sumRange(new Date(Date.UTC(Y,Mo-1,1)), now);
-  const moPrev = sumRange(new Date(Date.UTC(Y,Mo-2,1)), new Date(Date.UTC(Y,Mo-1,0)));
-  // like-for-like: current period-to-date vs previous period through the same point
   const prevWkSame = new Date(now); prevWkSame.setUTCDate(now.getUTCDate()-7);
   const wkTDprev = sumRange(lastMon, prevWkSame);
+  const [Y,Mo] = tk.split("-").map(Number);
   const dom = now.getUTCDate();
   const daysPrevMo = new Date(Date.UTC(Y,Mo-1,0)).getUTCDate();
+  const moNow  = sumRange(new Date(Date.UTC(Y,Mo-1,1)), now);
+  const moPrev = sumRange(new Date(Date.UTC(Y,Mo-2,1)), new Date(Date.UTC(Y,Mo-1,0)));
   const moTDprev = sumRange(new Date(Date.UTC(Y,Mo-2,1)), new Date(Date.UTC(Y,Mo-2,Math.min(dom,daysPrevMo))));
-  // tile: current period as % of previous, delta = absolute change in index points
-  const periodTile = (label, cur, prev) => {
+
+  // ---- record week / record month (completed periods only) ----
+  const wkTot={};
+  for (const k in idx){ const d=new Date(k+"T00:00:00Z"); d.setUTCDate(d.getUTCDate()-((d.getUTCDay()+6)%7));
+    const mk=d.toISOString().slice(0,10); if (mk===thisMonKey) continue; wkTot[mk]=(wkTot[mk]||0)+idx[k]; }
+  let recWkMon=null, recWkTotal=0; for (const mk in wkTot) if (wkTot[mk]>recWkTotal){ recWkTotal=wkTot[mk]; recWkMon=mk; }
+  let recWkToDate=0, recWkLabel="";
+  if (recWkMon){ const rm=new Date(recWkMon+"T00:00:00Z");
+    for (let d=0; d<=isoOff; d++){ const dd=new Date(rm); dd.setUTCDate(rm.getUTCDate()+d); recWkToDate+=idx[dd.toISOString().slice(0,10)]||0; }
+    recWkLabel=rm.toLocaleDateString(undefined,{day:"numeric",month:"short",year:"2-digit"}); }
+  const moTot = monthlyTotals("index"), curMonKey = tk.slice(0,7);
+  let recMoKey=null, recMoTotal=0; for (const mk in moTot){ if (mk===curMonKey) continue; if (moTot[mk]>recMoTotal){ recMoTotal=moTot[mk]; recMoKey=mk; } }
+  let recMoToDate=0, recMoLabel="";
+  if (recMoKey){ const [ry,rmn]=recMoKey.split("-").map(Number); const daysRec=new Date(Date.UTC(ry,rmn,0)).getUTCDate();
+    const upto=Math.min(dom,daysRec); for (let day=1; day<=upto; day++) recMoToDate+=idx[new Date(Date.UTC(ry,rmn-1,day)).toISOString().slice(0,10)]||0;
+    recMoLabel=MN[rmn-1]+" '"+recMoKey.slice(2,4); }
+
+  const periodTile = (label, cur, prev, det) => {
     const p = prev>0 ? Math.round(cur/prev*100) : null;
     const diff = Math.round(cur-prev);
     const base = p===null ? "—" : p+"%";
     const delt = p===null ? '<span class="delt flat">no prior</span>'
       : `<span class="delt ${diff>0?'up':diff<0?'down':'flat'}">${diff>=0?'▲ +':'▼ '}${Math.abs(diff).toLocaleString()}</span>`;
-    return `<div class="stat"><div class="lab">${label}</div><div class="base">${base}</div>${delt}</div>`;
+    return `<div class="stat"><div class="lab">${label}</div><div class="base">${base}</div>${delt}${det?`<div class="rd">${det}</div>`:""}</div>`;
   };
 
   document.getElementById("statsRow").innerHTML = `
-    <div class="stat"><div class="lab">Reps today</div><div class="base">${repsToday.toLocaleString()}</div></div>
-    ${statTile("Yesterday", yIdx)}
-    ${statTile("Last 4 "+WD[todayW]+"s", aSame)}
-    ${statTile("Record", rec, recDelt)}
-    ${statTile("3-day avg", a3)}
-    ${statTile("7-day avg", a7)}
-    ${periodTile("Week to date", wkNow, wkTDprev)}
+    <div class="stat"><div class="lab">Reps today</div><div class="base">${repsToday.toLocaleString()}</div>${wdCnt?deltaCur(repsToday,avgRepsWD):""}</div>
+    ${cumTile("Cum vs avg day", avgCum, "@ "+lastSubLabel)}
+    ${cumTile("Cum vs avg "+WS[todayW], avgCumWD, "@ "+lastSubLabel+" "+WS[todayW])}
+    ${tile("Avg "+WS[todayW]+" idx", avgWD)}
+    ${tile("Avg daily idx", avgDaily)}
+    ${tile("Record "+WS[todayW], recWD)}
+    ${tile("Record day", recDay, recDelt)}
+    ${periodTile("WTD vs last wk", wkNow, wkTDprev)}
+    ${periodTile("WTD vs rec wk", wkNow, recWkToDate, recWkLabel?"rec "+recWkLabel:"")}
     ${periodTile("Week vs last", wkNow, wkPrev)}
-    ${periodTile("Month to date", moNow, moTDprev)}
-    ${periodTile("Month vs last", moNow, moPrev)}`;
+    ${periodTile("Week vs rec", wkNow, recWkTotal, recWkLabel?"rec "+recWkLabel:"")}
+    ${periodTile("MTD vs last mo", moNow, moTDprev)}
+    ${periodTile("MTD vs rec mo", moNow, recMoToDate, recMoLabel?"rec "+recMoLabel:"")}
+    ${periodTile("Month vs last", moNow, moPrev)}
+    ${periodTile("Month vs rec", moNow, recMoTotal, recMoLabel?"rec "+recMoLabel:"")}`;
 
   // exercises with buttons
   const per = todayTotals();
@@ -563,7 +612,16 @@ function monthCumSeries() {
       if (cd<=now) { cCur += idx[cd.toISOString().slice(0,10)]||0; cur.push(Math.round(cCur)); } else cur.push(null); }
     else cur.push(null);
   }
-  return {labels, cur, prev};
+  // record (highest-total) completed calendar month, excluding the current one
+  const moTot = monthlyTotals("index"), curMonKey = todayKey().slice(0,7);
+  let recKey=null, recMax=0;
+  for (const mk in moTot){ if (mk===curMonKey) continue; if (moTot[mk]>recMax){ recMax=moTot[mk]; recKey=mk; } }
+  let rec=null, recLabel="";
+  if (recKey){ const [ry,rm]=recKey.split("-").map(Number); const daysRec=new Date(Date.UTC(ry,rm,0)).getUTCDate();
+    rec=[]; let c=0;
+    for (let day=1; day<=n; day++){ if (day<=daysRec) c+=idx[new Date(Date.UTC(ry,rm-1,day)).toISOString().slice(0,10)]||0; rec.push(Math.round(c)); }
+    recLabel="Record mo ("+MN[rm-1]+" '"+recKey.slice(2,4)+")"; }
+  return {labels, cur, prev, rec, recLabel};
 }
 function drawCumChart(cvId, legendEl, S, curName, prevName) {
   const cv = document.getElementById(cvId);
@@ -598,7 +656,29 @@ function drawCumChart(cvId, legendEl, S, curName, prevName) {
   if (S.rec) lg += ` &nbsp;·&nbsp; <span style="color:#fbbf24">┈</span> ${S.recLabel}`;
   legendEl.innerHTML = lg + ` &nbsp;(cumulative index)`;
 }
+// intraday: today's cumulative index by time-of-day vs the average day (all history)
+function dayIntradaySeries() {
+  const N=24; const labels=[]; for (let h=0; h<=N; h++) labels.push(h+"h");
+  const tk=todayKey();
+  const wOf=id=>{const ex=state.exercises.find(x=>x.id===id);return ex?ex.weight:1;};
+  const hourOf=t=>{const d=new Date(t);return d.getHours()+d.getMinutes()/60+d.getSeconds()/3600;};
+  let minT=Infinity; for (const e of state.log) if (e.t<minT) minT=e.t;
+  const bucket=new Array(N+1).fill(0), todayBucket=new Array(N+1).fill(0);
+  for (const e of state.log){ const hb=Math.min(N, Math.ceil(hourOf(e.t)));
+    if (dayKey(e.t)===tk) todayBucket[hb]+=e.reps*wOf(e.ex); else bucket[hb]+=e.reps*wOf(e.ex); }
+  // count days before today (incl rest days)
+  let dCnt=0;
+  if (minT<Infinity){ const end=new Date(tk+"T00:00:00Z");
+    for (let d=new Date(dayKey(minT)+"T00:00:00Z"); d<end; d.setUTCDate(d.getUTCDate()+1)) dCnt++; }
+  dCnt=Math.max(1,dCnt);
+  const nowH=Math.ceil(new Date().getHours()+new Date().getMinutes()/60);
+  const cur=[], avg=[]; let ca=0, cc=0;
+  for (let h=0; h<=N; h++){ ca+=bucket[h]; avg.push(Math.round(ca/dCnt*10)/10);
+    cc+=todayBucket[h]; cur.push(h<=nowH ? Math.round(cc) : null); }
+  return {labels, cur, prev:avg};
+}
 function drawCumCharts() {
+  drawCumChart("dayCumChart", document.getElementById("dayCumLegend"), dayIntradaySeries(), "Today", "Average day");
   drawCumChart("weekCumChart", document.getElementById("weekCumLegend"), weekCumSeries(), "This week", "Last week");
   drawCumChart("monthCumChart", document.getElementById("monthCumLegend"), monthCumSeries(), "This month", "Last month");
 }
