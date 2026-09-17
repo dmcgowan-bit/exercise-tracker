@@ -177,6 +177,7 @@ let chartMode = "index";
 let chartDays = 14;
 let monthMode = "index";
 let logShown = 50;
+const CUM_SINCE = "2026-07-01";  // time-of-day baselines only look back this far
 
 function load() {
   try { const s = JSON.parse(localStorage.getItem(STORE)); if (s && s.exercises) return s; } catch(e){}
@@ -284,21 +285,24 @@ function render() {
 
   // single pass over calendar days (first activity .. yesterday) for averages + records
   let minT=Infinity; for (const e of state.log) if (e.t<minT) minT=e.t;
-  let dCnt=0, wdCnt=0, sIdx=0, sIdxWD=0, sRepsWD=0, sCum=0, sCumWD=0, recDay=0, recWD=0;
+  let dCnt=0, wdCnt=0, sIdx=0, sIdxWD=0, sRepsWD=0, recDay=0, recWD=0;
+  let dCntC=0, wdCntC=0, sCumC=0, sCumWDC=0;   // time-of-day baselines: only days >= CUM_SINCE
   if (minT<Infinity){
     const end=new Date(tk+"T00:00:00Z");
     for (let d=new Date(dayKey(minT)+"T00:00:00Z"); d<end; d.setUTCDate(d.getUTCDate()+1)){
       const k=d.toISOString().slice(0,10), w=d.getUTCDay(), vi=idx[k]||0;
+      const inWin = k>=CUM_SINCE;
       dCnt++; sIdx+=vi; if (vi>recDay) recDay=vi;
-      if (lastSubSec!=null) sCum+=dayCumAt[k]||0;
-      if (w===todayW){ wdCnt++; sIdxWD+=vi; sRepsWD+=rep[k]||0; if (lastSubSec!=null) sCumWD+=dayCumAt[k]||0; if (vi>recWD) recWD=vi; }
+      if (lastSubSec!=null && inWin){ dCntC++; sCumC+=dayCumAt[k]||0; }
+      if (w===todayW){ wdCnt++; sIdxWD+=vi; sRepsWD+=rep[k]||0; if (vi>recWD) recWD=vi;
+        if (lastSubSec!=null && inWin){ wdCntC++; sCumWDC+=dayCumAt[k]||0; } }
     }
   }
   const avgDaily  = dCnt? sIdx/dCnt : 0;
   const avgWD     = wdCnt? sIdxWD/wdCnt : 0;
   const avgRepsWD = wdCnt? sRepsWD/wdCnt : 0;
-  const avgCum    = (lastSubSec!=null && dCnt)? sCum/dCnt : null;
-  const avgCumWD  = (lastSubSec!=null && wdCnt)? sCumWD/wdCnt : null;
+  const avgCum    = (lastSubSec!=null && dCntC)? sCumC/dCntC : null;
+  const avgCumWD  = (lastSubSec!=null && wdCntC)? sCumWDC/wdCntC : null;
 
   // ---- delta renderers ----
   const deltaCur = (cur, base) => {
@@ -664,12 +668,14 @@ function dayIntradaySeries() {
   const hourOf=t=>{const d=new Date(t);return d.getHours()+d.getMinutes()/60+d.getSeconds()/3600;};
   let minT=Infinity; for (const e of state.log) if (e.t<minT) minT=e.t;
   const bucket=new Array(N+1).fill(0), todayBucket=new Array(N+1).fill(0);
-  for (const e of state.log){ const hb=Math.min(N, Math.ceil(hourOf(e.t)));
-    if (dayKey(e.t)===tk) todayBucket[hb]+=e.reps*wOf(e.ex); else bucket[hb]+=e.reps*wOf(e.ex); }
-  // count days before today (incl rest days)
+  for (const e of state.log){ const k=dayKey(e.t); const hb=Math.min(N, Math.ceil(hourOf(e.t)));
+    if (k===tk) todayBucket[hb]+=e.reps*wOf(e.ex);
+    else if (k>=CUM_SINCE) bucket[hb]+=e.reps*wOf(e.ex); }  // average baseline only since CUM_SINCE
+  // count baseline days (>= CUM_SINCE, before today, incl rest days)
   let dCnt=0;
   if (minT<Infinity){ const end=new Date(tk+"T00:00:00Z");
-    for (let d=new Date(dayKey(minT)+"T00:00:00Z"); d<end; d.setUTCDate(d.getUTCDate()+1)) dCnt++; }
+    const startStr = dayKey(minT)>CUM_SINCE ? dayKey(minT) : CUM_SINCE;
+    for (let d=new Date(startStr+"T00:00:00Z"); d<end; d.setUTCDate(d.getUTCDate()+1)) dCnt++; }
   dCnt=Math.max(1,dCnt);
   const nowH=Math.ceil(new Date().getHours()+new Date().getMinutes()/60);
   const cur=[], avg=[]; let ca=0, cc=0;
@@ -678,7 +684,7 @@ function dayIntradaySeries() {
   return {labels, cur, prev:avg};
 }
 function drawCumCharts() {
-  drawCumChart("dayCumChart", document.getElementById("dayCumLegend"), dayIntradaySeries(), "Today", "Average day");
+  drawCumChart("dayCumChart", document.getElementById("dayCumLegend"), dayIntradaySeries(), "Today", "Avg day (since 1 Jul '26)");
   drawCumChart("weekCumChart", document.getElementById("weekCumLegend"), weekCumSeries(), "This week", "Last week");
   drawCumChart("monthCumChart", document.getElementById("monthCumLegend"), monthCumSeries(), "This month", "Last month");
 }
