@@ -396,8 +396,24 @@ function render() {
     return `<div class="stat"><div class="lab">${label}</div><div class="base">${base}</div>${delt}${det?`<div class="rd">${det}</div>`:""}</div>`;
   };
 
+  // days since the most recent 0-activity (rest) day, completed days only
+  let zeroDate=null, daysSince=null;
+  if (minT<Infinity){
+    const firstK=dayKey(minT);
+    const y=new Date(tk+"T00:00:00Z"); y.setUTCDate(y.getUTCDate()-1);
+    for (let d=new Date(y); ; d.setUTCDate(d.getUTCDate()-1)){
+      const k=d.toISOString().slice(0,10); if (k<firstK) break;
+      if ((idx[k]||0)===0){ zeroDate=k; break; }
+    }
+    const t0=new Date(tk+"T00:00:00Z");
+    daysSince = zeroDate ? Math.round((t0-new Date(zeroDate+"T00:00:00Z"))/86400000)
+                         : Math.round((t0-new Date(firstK+"T00:00:00Z"))/86400000)+1;
+  }
+  const zeroLabel = zeroDate ? new Date(zeroDate+"T12:00:00Z").toLocaleDateString(undefined,{day:"2-digit",month:"short"}) : "no rest day";
+
   document.getElementById("statsRow").innerHTML = `
     <div class="stat"><div class="lab">Reps today</div><div class="base">${repsToday.toLocaleString()}</div>${wdCnt?deltaCur(repsToday,avgRepsWD):""}</div>
+    <div class="stat"><div class="lab">Days since 0 day</div><div class="base">${daysSince==null?"–":daysSince}</div><div class="rd">${zeroLabel}</div></div>
     ${cumTile("Cum vs avg day", avgCum, "@ "+lastSubLabel)}
     ${cumTile("Cum vs avg "+WS[todayW], avgCumWD, "@ "+lastSubLabel+" "+WS[todayW])}
     ${tile("Avg "+WS[todayW]+" idx", avgWD)}
@@ -406,12 +422,8 @@ function render() {
     ${tile("Record day", recDay, recDelt)}
     ${periodTile("WTD vs last wk", wkNow, wkTDprev)}
     ${periodTile("WTD vs rec wk", wkNow, recWkToDate, recWkLabel?"rec "+recWkLabel:"")}
-    ${periodTile("Week vs last", wkNow, wkPrev)}
-    ${periodTile("Week vs rec", wkNow, recWkTotal, recWkLabel?"rec "+recWkLabel:"")}
     ${periodTile("MTD vs last mo", moNow, moTDprev)}
-    ${periodTile("MTD vs rec mo", moNow, recMoToDate, recMoLabel?"rec "+recMoLabel:"")}
-    ${periodTile("Month vs last", moNow, moPrev)}
-    ${periodTile("Month vs rec", moNow, recMoTotal, recMoLabel?"rec "+recMoLabel:"")}`;
+    ${periodTile("MTD vs rec mo", moNow, recMoToDate, recMoLabel?"rec "+recMoLabel:"")}`;
 
   // exercises with buttons
   const per = todayTotals();
