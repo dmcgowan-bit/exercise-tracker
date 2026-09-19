@@ -96,7 +96,7 @@
       </div>
       <div class="hl-item load-tile">
         <div class="index-num" id="loadNum">–</div>
-        <div class="index-label">Load 7d ÷ 28d</div>
+        <div class="index-label">Load 7d ÷ 21d</div>
         <div class="rd" id="loadDetail"></div>
       </div>
     </div>
@@ -290,15 +290,6 @@ function render() {
   const todayIdx = Math.round(idx[tk]||0);
   document.getElementById("indexNum").textContent = todayIdx;
 
-  // intensity / load ratio (ACWR): 7-day avg ÷ 28-day avg of daily index (completed days)
-  const meanPrev = n => { const ds=lastNDays(n+1).slice(0,n); return ds.reduce((a,d)=>a+(idx[d]||0),0)/n; };
-  const load7 = meanPrev(7), load28 = meanPrev(28), loadR = load28>0 ? load7/load28 : null;
-  const loadEl = document.getElementById("loadNum");
-  if (loadR==null){ loadEl.textContent="–"; loadEl.style.color="#999"; }
-  else { loadEl.textContent=loadR.toFixed(2);
-    loadEl.style.color = loadR<1.3 ? "#16a34a" : loadR<=1.5 ? "#f59e0b" : "#dc2626"; }
-  document.getElementById("loadDetail").textContent = "7d "+Math.round(load7)+" · 28d "+Math.round(load28);
-
   // ---- baselines over full history (calendar days, incl rest days) ----
   const rep = dailyReps();
   const WD = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
@@ -337,6 +328,41 @@ function render() {
   const avgRepsWD = wdCnt? sRepsWD/wdCnt : 0;
   const avgCum    = (lastSubSec!=null && dCntC)? sCumC/dCntC : null;
   const avgCumWD  = (lastSubSec!=null && wdCntC)? sCumWDC/wdCntC : null;
+
+  // ---- load ratio: mean daily index last 7d (incl today) ÷ mean of the 21d before that (days 8-28) ----
+  // non-overlapping; zero days count; needs 28 days of history, else "building baseline";
+  // colour band assessed on a 3-day trend of the ratio.
+  const firstK = minT<Infinity ? dayKey(minT) : null;
+  const meanDaysBack = (endDate, count) => { let s=0; const d=new Date(endDate);
+    for (let i=0;i<count;i++){ s+=idx[d.toISOString().slice(0,10)]||0; d.setUTCDate(d.getUTCDate()-1); } return s/count; };
+  const ratioEnding = end => {
+    if (!firstK) return null;
+    const oldest=new Date(end); oldest.setUTCDate(oldest.getUTCDate()-27);   // needs 28 days back
+    if (oldest.toISOString().slice(0,10) < firstK) return null;
+    const acute=meanDaysBack(end,7);
+    const chEnd=new Date(end); chEnd.setUTCDate(chEnd.getUTCDate()-7);
+    const chronic=meanDaysBack(chEnd,21);
+    if (!(chronic>0)) return null;
+    return {r:acute/chronic, acute, chronic};
+  };
+  const t0=new Date(tk+"T00:00:00Z");
+  const d1=new Date(t0); d1.setUTCDate(t0.getUTCDate()-1);
+  const d2=new Date(t0); d2.setUTCDate(t0.getUTCDate()-2);
+  const r0=ratioEnding(t0), r1=ratioEnding(d1), r2=ratioEnding(d2);
+  const loadEl=document.getElementById("loadNum"), loadDet=document.getElementById("loadDetail");
+  if (!r0){ loadEl.textContent="–"; loadEl.style.color="#777";
+    loadDet.innerHTML='<span style="color:#777">building baseline</span>'; }
+  else {
+    loadEl.textContent=r0.r.toFixed(2);
+    const trendVals=[r0,r1,r2].filter(x=>x).map(x=>x.r);
+    const trend=trendVals.reduce((a,b)=>a+b,0)/trendVals.length;
+    const band = trend<0.8 ? ["#3b82f6","detraining"]
+               : trend<1.4 ? ["#16a34a","safe progression"]
+               : trend<=1.6 ? ["#f59e0b","ramping too fast"]
+               : ["#dc2626","excessive"];
+    loadEl.style.color=band[0];
+    loadDet.innerHTML=`7d ${Math.round(r0.acute)} · prev21 ${Math.round(r0.chronic)}<br><span style="color:${band[0]}">${band[1]}</span>`;
+  }
 
   // ---- delta renderers ----
   const deltaCur = (cur, base) => {
