@@ -75,6 +75,12 @@
   .logwhen { color: var(--muted); width: 104px; flex-shrink: 0; }
   .logname { flex: 1; }
   .logreps { font-weight: 700; color: var(--accent2); }
+  .dtbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .dtbl th, .dtbl td { padding: 5px 4px; text-align: right; border-bottom: 1px solid #262b35; white-space: nowrap; }
+  .dtbl th { color: var(--muted); font-weight: 600; font-size: 10px; }
+  .dtbl th:nth-child(2), .dtbl td:nth-child(2) { text-align: left; }
+  .dtbl td:first-child { color: var(--muted); }
+  .dtbl td:nth-child(3) { font-weight: 600; }
   footer { text-align: center; color: var(--muted); font-size: 11px; margin-top: 8px; }
 </style>
 </head>
@@ -160,6 +166,11 @@
     <div class="small" style="margin-bottom:8px">Activity log <span id="logCount"></span></div>
     <div id="logList"></div>
     <button class="link" id="logMore" style="display:none; width:100%; text-align:center; margin-top:8px">Show more</button>
+  </div>
+
+  <div class="card">
+    <div class="small" style="margin-bottom:8px">Last 28 days (excl. today)</div>
+    <div style="overflow-x:auto"><table id="days28tbl" class="dtbl"></table></div>
   </div>
 
   <footer>Data is stored only on this device. Export regularly to back up.</footer>
@@ -422,6 +433,7 @@ function render() {
 
   renderExList();
   renderLog();
+  renderDays28();
   drawChart();
   drawMonthChart();
   drawCumCharts();
@@ -441,6 +453,21 @@ function renderExList() {
 }
 
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function renderDays28() {
+  const idx = dailyIndex();
+  const days = lastNDays(29).slice(0,28); // oldest .. yesterday (excl today)
+  const rows = []; let cum=0;
+  for (let i=0;i<28;i++){ const k=days[i], v=idx[k]||0; cum+=v;
+    let seven=null; if (i>=6){ let s=0; for (let j=i-6;j<=i;j++) s+=idx[days[j]]||0; seven=s/7; }
+    rows.push({p:i+1, k, v, cum:cum/(i+1), seven}); }
+  rows.reverse(); // newest first
+  const fd = k => new Date(k+"T12:00:00Z").toLocaleDateString(undefined,{day:"2-digit",month:"short"});
+  let h='<thead><tr><th>#</th><th>Date</th><th>Index</th><th>Cum avg</th><th>7d avg</th></tr></thead><tbody>';
+  for (const r of rows) h+=`<tr><td>${r.p}</td><td>${fd(r.k)}</td><td>${Math.round(r.v).toLocaleString()}</td>`
+    +`<td>${Math.round(r.cum).toLocaleString()}</td><td>${r.seven==null?"":Math.round(r.seven).toLocaleString()}</td></tr>`;
+  document.getElementById("days28tbl").innerHTML = h+"</tbody>";
+}
 
 function renderLog() {
   const wrap = document.getElementById("logList");
