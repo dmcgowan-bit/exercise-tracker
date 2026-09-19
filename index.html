@@ -350,12 +350,14 @@ function render() {
   const d2=new Date(t0); d2.setUTCDate(t0.getUTCDate()-2);
   const r0=ratioEnding(t0), r1=ratioEnding(d1), r2=ratioEnding(d2);
   const loadEl=document.getElementById("loadNum"), loadDet=document.getElementById("loadDetail");
+  let loadBlue=false;
   if (!r0){ loadEl.textContent="–"; loadEl.style.color="#777";
     loadDet.innerHTML='<span style="color:#777">building baseline</span>'; }
   else {
     loadEl.textContent=r0.r.toFixed(2);
     const trendVals=[r0,r1,r2].filter(x=>x).map(x=>x.r);
     const trend=trendVals.reduce((a,b)=>a+b,0)/trendVals.length;
+    loadBlue = trend<0.8;
     const band = trend<0.8 ? ["#3b82f6","detraining"]
                : trend<1.4 ? ["#16a34a","safe progression"]
                : trend<=1.6 ? ["#f59e0b","ramping too fast"]
@@ -436,10 +438,14 @@ function render() {
                          : Math.round((t0-new Date(firstK+"T00:00:00Z"))/86400000)+1;
   }
   const zeroLabel = zeroDate ? new Date(zeroDate+"T12:00:00Z").toLocaleDateString(undefined,{day:"2-digit",month:"short"}) : "no rest day";
+  // traffic light: 0-7 green, 8-13 amber, 14+ red; held green while load is in the blue (low) band
+  const dsColor = (daysSince==null) ? "#8b90a0"
+    : loadBlue ? "#16a34a"
+    : daysSince<=7 ? "#16a34a" : daysSince<=13 ? "#f59e0b" : "#dc2626";
 
   document.getElementById("statsRow").innerHTML = `
     <div class="stat"><div class="lab">Reps today</div><div class="base">${repsToday.toLocaleString()}</div>${wdCnt?deltaCur(repsToday,avgRepsWD):""}</div>
-    <div class="stat"><div class="lab">Days since 0 day</div><div class="base">${daysSince==null?"–":daysSince}</div><div class="rd">${zeroLabel}</div></div>
+    <div class="stat"><div class="lab">Days since 0 day</div><div class="base" style="color:${dsColor}">${daysSince==null?"–":daysSince}</div><div class="rd">${zeroLabel}</div></div>
     ${cumTile("Cum vs avg day", avgCum, "@ "+lastSubLabel)}
     ${cumTile("Cum vs avg "+WS[todayW], avgCumWD, "@ "+lastSubLabel+" "+WS[todayW])}
     ${tile("Avg "+WS[todayW]+" idx", avgWD)}
