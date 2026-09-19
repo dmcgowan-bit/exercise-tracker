@@ -345,10 +345,13 @@ function render() {
     if (!(chronic>0)) return null;
     return {r:acute/chronic, acute, chronic};
   };
-  const t0=new Date(tk+"T00:00:00Z");
-  const d1=new Date(t0); d1.setUTCDate(t0.getUTCDate()-1);
-  const d2=new Date(t0); d2.setUTCDate(t0.getUTCDate()-2);
-  const r0=ratioEnding(t0), r1=ratioEnding(d1), r2=ratioEnding(d2);
+  // include today in the acute window only once something is logged today; else end at yesterday
+  const hasToday = (idx[tk]||0) > 0;
+  const baseEnd = new Date(tk+"T00:00:00Z");
+  if (!hasToday) baseEnd.setUTCDate(baseEnd.getUTCDate()-1);
+  const d1=new Date(baseEnd); d1.setUTCDate(baseEnd.getUTCDate()-1);
+  const d2=new Date(baseEnd); d2.setUTCDate(baseEnd.getUTCDate()-2);
+  const r0=ratioEnding(baseEnd), r1=ratioEnding(d1), r2=ratioEnding(d2);
   const loadEl=document.getElementById("loadNum"), loadDet=document.getElementById("loadDetail");
   let loadBlue=false;
   if (!r0){ loadEl.textContent="–"; loadEl.style.color="#777";
