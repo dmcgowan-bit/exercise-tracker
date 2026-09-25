@@ -327,7 +327,16 @@ function render() {
   const avgWD     = wdCnt? sIdxWD/wdCnt : 0;
   const avgRepsWD = wdCnt? sRepsWD/wdCnt : 0;
   const avgCum    = (lastSubSec!=null && dCntC)? sCumC/dCntC : null;
-  const avgCumWD  = (lastSubSec!=null && wdCntC)? sCumWDC/wdCntC : null;
+  // "Cum vs avg [weekday]" tile: average cumulative-at-time over the last 4 same-weekday dates
+  let avgCumWD = null;
+  if (lastSubSec!=null){
+    const fK = minT<Infinity ? dayKey(minT) : null;
+    const sel=[]; const base=new Date(tk+"T00:00:00Z");
+    for (let i=1; i<=70 && sel.length<4; i++){ const dd=new Date(base); dd.setUTCDate(base.getUTCDate()-i);
+      const k=dd.toISOString().slice(0,10); if (fK && k<fK) break;
+      if (dd.getUTCDay()===todayW) sel.push(k); }
+    if (sel.length) avgCumWD = sel.reduce((a,k)=>a+(dayCumAt[k]||0),0)/sel.length;
+  }
 
   // ---- load ratio: mean daily index last 7d (incl today) ÷ mean of the 21d before that (days 8-28) ----
   // non-overlapping; zero days count; needs 28 days of history, else "building baseline";
