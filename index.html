@@ -757,31 +757,37 @@ function drawCumChart(cvId, legendEl, S, curName, prevName) {
   if (S.rec) lg += ` &nbsp;·&nbsp; <span style="color:#fbbf24">┈</span> ${S.recLabel}`;
   legendEl.innerHTML = lg + ` &nbsp;(cumulative index)`;
 }
-// intraday: today's cumulative index by time-of-day vs the average day (all history)
+// intraday: today's cumulative index by time-of-day vs the average of the last 4 same-weekdays
 function dayIntradaySeries() {
   const N=24; const labels=[]; for (let h=0; h<=N; h++) labels.push(h+"h");
   const tk=todayKey();
   const wOf=id=>{const ex=state.exercises.find(x=>x.id===id);return ex?ex.weight:1;};
   const hourOf=t=>{const d=new Date(t);return d.getHours()+d.getMinutes()/60+d.getSeconds()/3600;};
   let minT=Infinity; for (const e of state.log) if (e.t<minT) minT=e.t;
+  const firstK = minT<Infinity ? dayKey(minT) : null;
+  const todayW = new Date(tk+"T12:00:00Z").getUTCDay();
+  // the last 4 dates (before today) that fall on today's weekday and are within history
+  const selSet=new Set();
+  { const base=new Date(tk+"T00:00:00Z");
+    for (let i=1; i<=70 && selSet.size<4; i++){ const dd=new Date(base); dd.setUTCDate(base.getUTCDate()-i);
+      const k=dd.toISOString().slice(0,10); if (firstK && k<firstK) break;
+      if (dd.getUTCDay()===todayW) selSet.add(k); } }
+  const nSel=selSet.size;
   const bucket=new Array(N+1).fill(0), todayBucket=new Array(N+1).fill(0);
   for (const e of state.log){ const k=dayKey(e.t); const hb=Math.min(N, Math.ceil(hourOf(e.t)));
     if (k===tk) todayBucket[hb]+=e.reps*wOf(e.ex);
-    else if (k>=CUM_SINCE) bucket[hb]+=e.reps*wOf(e.ex); }  // average baseline only since CUM_SINCE
-  // count baseline days (>= CUM_SINCE, before today, incl rest days)
-  let dCnt=0;
-  if (minT<Infinity){ const end=new Date(tk+"T00:00:00Z");
-    const startStr = dayKey(minT)>CUM_SINCE ? dayKey(minT) : CUM_SINCE;
-    for (let d=new Date(startStr+"T00:00:00Z"); d<end; d.setUTCDate(d.getUTCDate()+1)) dCnt++; }
-  dCnt=Math.max(1,dCnt);
+    else if (selSet.has(k)) bucket[hb]+=e.reps*wOf(e.ex); }
   const nowH=Math.ceil(new Date().getHours()+new Date().getMinutes()/60);
   const cur=[], avg=[]; let ca=0, cc=0;
-  for (let h=0; h<=N; h++){ ca+=bucket[h]; avg.push(Math.round(ca/dCnt*10)/10);
+  for (let h=0; h<=N; h++){ ca+=bucket[h]; avg.push(nSel ? Math.round(ca/nSel*10)/10 : null);
     cc+=todayBucket[h]; cur.push(h<=nowH ? Math.round(cc) : null); }
-  return {labels, cur, prev:avg};
+  return {labels, cur, prev:avg, nSel};
 }
 function drawCumCharts() {
-  drawCumChart("dayCumChart", document.getElementById("dayCumLegend"), dayIntradaySeries(), "Today", "Avg day (since 1 Jul '26)");
+  const WSF=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  const todW=new Date(todayKey()+"T12:00:00Z").getUTCDay();
+  const dayS=dayIntradaySeries();
+  drawCumChart("dayCumChart", document.getElementById("dayCumLegend"), dayS, "Today", "Avg last "+(dayS.nSel||4)+" "+WSF[todW]+"s");
   drawCumChart("weekCumChart", document.getElementById("weekCumLegend"), weekCumSeries(), "This week", "Last week");
   drawCumChart("monthCumChart", document.getElementById("monthCumLegend"), monthCumSeries(), "This month", "Last month");
 }
